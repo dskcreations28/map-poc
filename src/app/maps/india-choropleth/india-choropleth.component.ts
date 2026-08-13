@@ -1,6 +1,7 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
+import { lastValueFrom } from 'rxjs';
 import * as L from 'leaflet';
 
 // Sequential blue ramp (design-system "blue" light steps) for magnitude encoding,
@@ -15,9 +16,17 @@ const RAMP = [
   '#0d366b', // 700
 ];
 
+type Geometry = GeoJSON.Geometry;
+type FeatureCollection<P> = GeoJSON.FeatureCollection<Geometry, P>;
+
 interface StateProperties {
   name: string;
   type: string;
+}
+
+interface DistrictProperties {
+  state: string | null;
+  district: string | null;
 }
 
 @Component({
@@ -30,19 +39,23 @@ interface StateProperties {
 export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
   @ViewChild('mapContainer', { static: true }) mapContainer!: ElementRef<HTMLDivElement>;
 
-  // Deterministic synthetic "value" per state so the choropleth is meaningful
+  // Deterministic synthetic "value" per region so the choropleth is meaningful
   // without a backend. Bucketed into the ramp by a stable pseudo-metric.
   private metric: Record<string, number> = {};
   private map?: L.Map;
   private geoJsonLayer?: L.GeoJSON;
   private legend?: L.Control;
+  private statesFc?: FeatureCollection<StateProperties>;
+  private districtsFc?: FeatureCollection<DistrictProperties>;
+
+  currentState: string | null = null;
   error: string | null = null;
 
   constructor(private http: HttpClient) {}
 
   ngAfterViewInit(): void {
     this.initMap();
-    this.loadData();
+    this.loadStates();
   }
 
   ngOnDestroy(): void {
@@ -60,28 +73,60 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  private loadData(): void {
+  private loadStates(): void {
     this.http
-      .get<GeoJSON.FeatureCollection<GeoJSON.Geometry, StateProperties>>(
-        'assets/data/india-states.geojson'
-      )
+      .get<FeatureCollection<StateProperties>>('assets/data/india-states.geojson')
       .subscribe({
         next: (fc) => {
-          // Build a stable pseudo-metric per state from its name.
-          fc.features.forEach((f, i) => {
-            const name = f.properties?.name ?? `State ${i}`;
-            // Hash the name into a 0..100 value (deterministic, no backend).
-            let h = 0;
-            for (let c = 0; c < name.length; c++) h = (h * 31 + name.charCodeAt(c)) % 1000;
-            this.metric[name] = 20 + (h % 81); // 20..100
-          });
-          this.renderLayer(fc);
+          this.statesFc = fc;
+          fc.features.forEach((f, i) => this.assignMetric(f.properties?.name ?? `State ${i}`));
+          this.renderStates();
           this.addLegend();
         },
         error: () => {
           this.error = 'Unable to load India states map data.';
         },
       });
+  }
+
+  private loadDistricts(): Promise<FeatureCollection<DistrictProperties>> {
+    if (this.districtsFc) return Promise.resolve(this.districtsFc);
+    return lastValueFrom(
+      this.http.get<FeatureCollection<DistrictProperties>>('assets/data/india-districts.geojson')
+    ).then((fc) => {
+      this.districtsFc = fc;
+      fc.features.forEach((f) => this.assignMetric(f.properties?.district ?? ''));
+      return fc;
+    });
+  }
+
+  // Stable hash of a name into a 20..100 pseudo-value (deterministic, no backend).
+  private assignMetric(name: string): void {
+    let h = 0;
+    for (let c = 0; c < name.length; c++) h = (h * 31 + name.charCodeAt(c)) % 1000;
+    this.metric[name] = 20 + (h % 81);
+  }
+
+  // Canonicalize a state name so states-file names match district-file state values.
+  private normalizeState(name: string): string {
+    const n = name.trim().toUpperCase().replace(/&/g, 'AND');
+    switch (n) {
+      case 'ANDAMAN AND NICOBAR':
+        return 'ANDAMAN AND NICOBAR ISLANDS';
+      case 'DADRA AND NAGAR HAVELI':
+      case 'DAMAN AND DIU':
+        return 'DADRA AND NAGAR HAVELI AND DAMAN AND DIU';
+      default:
+        return n;
+    }
+  }
+
+  private titleCase(name: string): string {
+    return name
+      .toLowerCase()
+      .split(' ')
+      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+      .join(' ');
   }
 
   private colorFor(value: number): string {
@@ -99,9 +144,19 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
     this.geoJsonLayer?.resetStyle(e.target);
   }
 
-  private renderLayer(fc: GeoJSON.FeatureCollection<GeoJSON.Geometry, StateProperties>): void {
-    if (!this.map) return;
-    this.geoJsonLayer = L.geoJSON(fc, {
+  private clearLayers(): void {
+    if (this.geoJsonLayer) {
+      this.map?.removeLayer(this.geoJsonLayer);
+      this.geoJsonLayer = undefined;
+    }
+  }
+
+  private renderStates(): void {
+    if (!this.map || !this.statesFc) return;
+    this.clearLayers();
+    this.currentState = null;
+
+    this.geoJsonLayer = L.geoJSON(this.statesFc, {
       style: (feature) => {
         const name = feature?.properties?.name ?? '';
         return {
@@ -114,12 +169,11 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
       onEachFeature: (feature, layer) => {
         const name = feature?.properties?.name ?? '';
         const value = this.metric[name] ?? 0;
-        // Native Leaflet tooltip, sticky so it follows the cursor on hover
         layer.bindTooltip(`${name}: ${value}`, { sticky: true });
-        // Add highlight effect on hover
         layer.on({
           mouseover: (e) => this.highlight(e),
           mouseout: (e) => this.resetHighlight(e),
+          click: () => this.drillDown(name),
         });
       },
     }).addTo(this.map);
@@ -127,6 +181,54 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
     this.map.fitBounds(this.geoJsonLayer.getBounds(), { padding: [12, 12] });
   }
 
+  private async drillDown(stateName: string): Promise<void> {
+    try {
+      const fc = await this.loadDistricts();
+      const norm = this.normalizeState(stateName);
+      const matched = fc.features.filter(
+        (f) => f.properties?.state && this.normalizeState(f.properties.state) === norm
+      );
+      if (!matched.length || !this.map) return;
+
+      const subset: FeatureCollection<DistrictProperties> = {
+        type: 'FeatureCollection',
+        features: matched,
+      };
+
+      this.clearLayers();
+      this.currentState = stateName;
+
+      this.geoJsonLayer = L.geoJSON(subset, {
+        style: (feature) => {
+          const name = feature?.properties?.district ?? '';
+          return {
+            weight: 1,
+            color: '#ffffff',
+            fillColor: this.colorFor(this.metric[name] ?? 0),
+            fillOpacity: 0.85,
+          };
+        },
+        onEachFeature: (feature, layer) => {
+          const raw = feature?.properties?.district ?? '';
+          const name = this.titleCase(raw);
+          const value = this.metric[raw] ?? 0;
+          layer.bindTooltip(`${name}: ${value}`, { sticky: true });
+          layer.on({
+            mouseover: (e) => this.highlight(e),
+            mouseout: (e) => this.resetHighlight(e),
+          });
+        },
+      }).addTo(this.map);
+
+      this.map.fitBounds(this.geoJsonLayer.getBounds(), { padding: [12, 12] });
+    } catch {
+      this.error = 'Unable to load district map data.';
+    }
+  }
+
+  backToStates(): void {
+    this.renderStates();
+  }
 
   private addLegend(): void {
     if (!this.map) return;

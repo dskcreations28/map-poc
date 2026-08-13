@@ -4,5 +4,8 @@
     <span class="choropleth-sub">Synthetic index values (for demonstration)</span>
   </div>
   <div #mapContainer class="choropleth-map"></div>
+  <div class="choropleth-back" *ngIf="currentState">
+    <button type="button" (click)="backToStates()">&larr; Back to India</button>
+  </div>
   <p class="choropleth-note" *ngIf="error">{{ error }}</p>
 </div>

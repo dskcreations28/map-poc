@@ -45,6 +45,24 @@
   font-size: 0.875rem;
 }
 
+.choropleth-back {
+  margin-top: 0.5rem;
+
+  button {
+    background: #184f95;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    cursor: pointer;
+
+    &:hover {
+      background: #0d366b;
+    }
+  }
+}
+
 :host ::ng-deep .india-legend {
   background: #fcfcfb;
   padding: 0.5rem 0.625rem;
