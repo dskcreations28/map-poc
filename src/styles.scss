@@ -2,6 +2,8 @@
 
 /* Importing Bootstrap SCSS file. */
 @import "bootstrap/scss/bootstrap";
+/* Leaflet maps CSS (global so dynamically-created Leaflet elements are styled) */
+@import "leaflet/dist/leaflet.css";
 /* Core Grid CSS */
 @import "ag-grid-community/styles/ag-grid.css";
 /* Quartz Theme Specific CSS */
@@ -9,4 +11,10 @@
 
 .pe-cursor {
   cursor: pointer;
+}
+
+/* Remove default focus outline (square border) on clicked Leaflet shapes */
+.leaflet-interactive:focus,
+.leaflet-interactive:focus-visible {
+  outline: none;
 }

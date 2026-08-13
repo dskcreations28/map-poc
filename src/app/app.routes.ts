@@ -1,8 +1,9 @@
 import { Routes } from '@angular/router';
 import { authGuardGuard } from './auth/auth-guard.guard';
+import { MapsComponent } from './maps/maps.component';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'login', pathMatch: 'full' },
+  { path: '', component: MapsComponent, pathMatch: 'full' },
   {
     path: 'auth',
     loadChildren: () => import('./auth/auth.module').then((m) => m.AuthModule),

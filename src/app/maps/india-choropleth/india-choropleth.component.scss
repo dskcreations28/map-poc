@@ -1,0 +1,76 @@
+:host {
+  display: block;
+}
+
+.choropleth-card {
+  background: #ffffff;
+  border: 1px solid rgba(11, 11, 11, 0.1);
+  border-radius: 12px;
+  padding: 1rem 1rem 0.75rem;
+  box-shadow: 0 2px 8px rgba(11, 11, 11, 0.06);
+  max-width: 1000px;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.choropleth-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+
+  h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #0b0b0b;
+  }
+
+  .choropleth-sub {
+    font-size: 0.8125rem;
+    color: #52514e;
+  }
+}
+
+.choropleth-map {
+  height: 520px;
+  width: 100%;
+  border-radius: 8px;
+  background: #f9f9f7;
+}
+
+.choropleth-note {
+  margin: 0.5rem 0 0;
+  color: #d03b3b;
+  font-size: 0.875rem;
+}
+
+:host ::ng-deep .india-legend {
+  background: #fcfcfb;
+  padding: 0.5rem 0.625rem;
+  border-radius: 8px;
+  border: 1px solid rgba(11, 11, 11, 0.1);
+  font-size: 0.75rem;
+  color: #0b0b0b;
+  line-height: 1.4;
+
+  .india-legend-title {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .india-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+
+    i {
+      width: 14px;
+      height: 14px;
+      display: inline-block;
+      border-radius: 2px;
+    }
+  }
+}
+
