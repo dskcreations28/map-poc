@@ -45,7 +45,10 @@
   font-size: 0.875rem;
 }
 
-.choropleth-back {
+.choropleth-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   margin-top: 0.5rem;
 
   button {
@@ -60,6 +63,11 @@
     &:hover {
       background: #0d366b;
     }
+  }
+
+  .choropleth-crumb {
+    font-size: 0.8125rem;
+    color: #52514e;
   }
 }
 

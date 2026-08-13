@@ -4,8 +4,11 @@
     <span class="choropleth-sub">Synthetic index values (for demonstration)</span>
   </div>
   <div #mapContainer class="choropleth-map"></div>
-  <div class="choropleth-back" *ngIf="currentState">
-    <button type="button" (click)="backToStates()">&larr; Back to India</button>
+  <div class="choropleth-actions">
+    <button type="button" *ngIf="currentState" (click)="back()">&larr; Back to {{ currentDistrict ? 'Districts' : 'India' }}</button>
+    <span class="choropleth-crumb" *ngIf="currentState">
+      India / {{ currentState }}<ng-container *ngIf="currentDistrictTitle"> / {{ currentDistrictTitle }}</ng-container>
+    </span>
   </div>
   <p class="choropleth-note" *ngIf="error">{{ error }}</p>
 </div>
