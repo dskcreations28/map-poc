@@ -6,6 +6,9 @@
   <div #mapContainer class="choropleth-map"></div>
   <div class="choropleth-actions">
     <button type="button" *ngIf="currentState" (click)="back()">&larr; Back to {{ currentDistrict ? 'Districts' : 'India' }}</button>
+    <button type="button" *ngIf="currentDistrict" [class.active]="showMicromarkets" (click)="toggleMicromarkets()">
+      {{ showMicromarkets ? 'Hide' : 'Show' }} Micromarkets
+    </button>
     <span class="choropleth-crumb" *ngIf="currentState">
       India / {{ currentState }}<ng-container *ngIf="currentDistrictTitle"> / {{ currentDistrictTitle }}</ng-container>
     </span>

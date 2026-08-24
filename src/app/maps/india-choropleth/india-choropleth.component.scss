@@ -63,6 +63,11 @@
     &:hover {
       background: #0d366b;
     }
+
+    &.active {
+      background: #0d366b;
+      box-shadow: 0 0 0 2px #cde2fb;
+    }
   }
 
   .choropleth-crumb {

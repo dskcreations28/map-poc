@@ -4,37 +4,23 @@ import { HttpClient } from '@angular/common/http';
 import { lastValueFrom } from 'rxjs';
 import * as L from 'leaflet';
 
-// Sequential blue ramp (design-system "blue" light steps) for magnitude encoding,
-// light (near zero) -> dark (high). 7 buckets.
 const RAMP = [
-  '#cde2fb', // 100
-  '#9ec5f4', // 200
-  '#6da7ec', // 300
-  '#5598e7', // 350
-  '#2a78d6', // 450
-  '#184f95', // 600
-  '#0d366b', // 700
+  '#cde2fb', '#9ec5f4', '#6da7ec', '#5598e7', '#2a78d6', '#184f95', '#0d366b',
+];
+
+const ZONE_COLORS = [
+  '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c',
+  '#e67e22', '#3498db', '#e91e63', '#00bcd4', '#8bc34a',
+  '#ff5722', '#607d8b', '#795548', '#4caf50', '#ff9800',
 ];
 
 type Geometry = GeoJSON.Geometry;
 type FeatureCollection<P> = GeoJSON.FeatureCollection<Geometry, P>;
 
-interface StateProperties {
-  name: string;
-  type: string;
-}
-
-interface DistrictProperties {
-  state: string | null;
-  district: string | null;
-}
-
-interface PincodeProperties {
-  pincode: string;
-  district: string;
-  state: string;
-  office_name?: string;
-}
+interface StateProperties { name: string; type: string; }
+interface DistrictProperties { state: string | null; district: string | null; }
+interface PincodeProperties { pincode: string; district: string; state: string; office_name?: string; }
+interface MicromarketInfo { location: string; city: string; zone: string; }
 
 @Component({
   selector: 'app-india-choropleth',
@@ -46,19 +32,21 @@ interface PincodeProperties {
 export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
   @ViewChild('mapContainer', { static: true }) mapContainer!: ElementRef<HTMLDivElement>;
 
-  // Deterministic synthetic "value" per region so the choropleth is meaningful
-  // without a backend. Bucketed into the ramp by a stable pseudo-metric.
   private metric: Record<string, number> = {};
   private map?: L.Map;
   private geoJsonLayer?: L.GeoJSON;
+  private micromarketLayer?: L.GeoJSON;
   private legend?: L.Control;
   private statesFc?: FeatureCollection<StateProperties>;
   private districtsFc?: FeatureCollection<DistrictProperties>;
   private pincodesFc?: FeatureCollection<PincodeProperties>;
+  private micromarketMap = new Map<string, MicromarketInfo>();
+  private currentPincodeFeatures: GeoJSON.Feature[] = [];
 
   currentState: string | null = null;
   currentDistrict: string | null = null;
   currentDistrictTitle: string | null = null;
+  showMicromarkets = false;
   error: string | null = null;
 
   constructor(private http: HttpClient) {}
@@ -66,6 +54,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     this.initMap();
     this.loadStates();
+    this.loadMicromarkets();
   }
 
   ngOnDestroy(): void {
@@ -74,12 +63,9 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
 
   private initMap(): void {
     this.map = L.map(this.mapContainer.nativeElement, {
-      center: [22.5, 80],
-      zoom: 4,
-      attributionControl: false,
-      zoomControl: true,
-      scrollWheelZoom: false,
-      doubleClickZoom: false
+      center: [22.5, 80], zoom: 4,
+      attributionControl: false, zoomControl: true,
+      scrollWheelZoom: false, doubleClickZoom: false,
     });
   }
 
@@ -93,10 +79,25 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
           this.renderStates();
           this.addLegend();
         },
-        error: () => {
-          this.error = 'Unable to load India states map data.';
-        },
+        error: () => { this.error = 'Unable to load India states map data.'; },
       });
+  }
+
+  private loadMicromarkets(): void {
+    this.http.get('assets/data/micromaps.csv', { responseType: 'text' }).subscribe({
+      next: (csv) => {
+        const lines = csv.trim().split('\n');
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(',');
+          if (cols.length < 4) continue;
+          const pincode = cols[0].trim();
+          const location = cols[1].trim();
+          const city = cols[2].trim();
+          const zone = cols[3].trim();
+          if (pincode) this.micromarketMap.set(pincode, { location, city, zone });
+        }
+      },
+    });
   }
 
   private loadDistricts(): Promise<FeatureCollection<DistrictProperties>> {
@@ -121,33 +122,24 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  // Stable hash of a name into a 20..100 pseudo-value (deterministic, no backend).
   private assignMetric(name: string): void {
     let h = 0;
     for (let c = 0; c < name.length; c++) h = (h * 31 + name.charCodeAt(c)) % 1000;
     this.metric[name] = 20 + (h % 81);
   }
 
-  // Canonicalize a state name so states-file names match district-file state values.
   private normalizeState(name: string): string {
     const n = name.trim().toUpperCase().replace(/&/g, 'AND');
     switch (n) {
-      case 'ANDAMAN AND NICOBAR':
-        return 'ANDAMAN AND NICOBAR ISLANDS';
+      case 'ANDAMAN AND NICOBAR': return 'ANDAMAN AND NICOBAR ISLANDS';
       case 'DADRA AND NAGAR HAVELI':
-      case 'DAMAN AND DIU':
-        return 'DADRA AND NAGAR HAVELI AND DAMAN AND DIU';
-      default:
-        return n;
+      case 'DAMAN AND DIU': return 'DADRA AND NAGAR HAVELI AND DAMAN AND DIU';
+      default: return n;
     }
   }
 
   private titleCase(name: string): string {
-    return name
-      .toLowerCase()
-      .split(' ')
-      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-      .join(' ');
+    return name.toLowerCase().split(' ').map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ');
   }
 
   private colorFor(value: number): string {
@@ -156,9 +148,8 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
   }
 
   private highlight(e: L.LeafletMouseEvent): void {
-    const layer = e.target;
-    layer.setStyle({ weight: 2.5, color: '#0b0b0b', fillOpacity: 1 });
-    layer.bringToFront();
+    e.target.setStyle({ weight: 2.5, color: '#0b0b0b', fillOpacity: 1 });
+    e.target.bringToFront();
   }
 
   private resetHighlight(e: L.LeafletMouseEvent): void {
@@ -169,6 +160,15 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
     if (this.geoJsonLayer) {
       this.map?.removeLayer(this.geoJsonLayer);
       this.geoJsonLayer = undefined;
+    }
+    this.clearMicromarketLayer();
+    this.currentPincodeFeatures = [];
+  }
+
+  private clearMicromarketLayer(): void {
+    if (this.micromarketLayer) {
+      this.map?.removeLayer(this.micromarketLayer);
+      this.micromarketLayer = undefined;
     }
   }
 
@@ -182,12 +182,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
     this.geoJsonLayer = L.geoJSON(this.statesFc, {
       style: (feature) => {
         const name = feature?.properties?.name ?? '';
-        return {
-          weight: 1,
-          color: '#ffffff',
-          fillColor: this.colorFor(this.metric[name] ?? 0),
-          fillOpacity: 0.85,
-        };
+        return { weight: 1, color: '#ffffff', fillColor: this.colorFor(this.metric[name] ?? 0), fillOpacity: 0.85 };
       },
       onEachFeature: (feature, layer) => {
         const name = feature?.properties?.name ?? '';
@@ -218,20 +213,12 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
       this.currentDistrict = null;
       this.currentDistrictTitle = null;
 
-      const subset: FeatureCollection<DistrictProperties> = {
-        type: 'FeatureCollection',
-        features: matched,
-      };
+      const subset: FeatureCollection<DistrictProperties> = { type: 'FeatureCollection', features: matched };
 
       this.geoJsonLayer = L.geoJSON(subset, {
         style: (feature) => {
           const name = feature?.properties?.district ?? '';
-          return {
-            weight: 1,
-            color: '#ffffff',
-            fillColor: this.colorFor(this.metric[name] ?? 0),
-            fillOpacity: 0.85,
-          };
+          return { weight: 1, color: '#ffffff', fillColor: this.colorFor(this.metric[name] ?? 0), fillOpacity: 0.85 };
         },
         onEachFeature: (feature, layer) => {
           const raw = feature?.properties?.district ?? '';
@@ -260,33 +247,26 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
       );
       if (!matched.length || !this.map) return;
 
-      const subset: FeatureCollection<PincodeProperties> = {
-        type: 'FeatureCollection',
-        features: matched,
-      };
+      const subset: FeatureCollection<PincodeProperties> = { type: 'FeatureCollection', features: matched };
 
       this.clearLayers();
       this.currentDistrict = district;
       this.currentDistrictTitle = this.titleCase(district);
+      this.currentPincodeFeatures = matched;
 
       this.geoJsonLayer = L.geoJSON(subset, {
         style: (feature) => {
           const pincode = feature?.properties?.pincode ?? '';
-          return {
-            weight: 1,
-            color: '#ffffff',
-            fillColor: this.colorFor(this.metric[pincode] ?? 0),
-            fillOpacity: 0.85,
-          };
+          return { weight: 1, color: '#ffffff', fillColor: this.colorFor(this.metric[pincode] ?? 0), fillOpacity: 0.85 };
         },
         onEachFeature: (feature, layer) => {
           const pincode = feature?.properties?.pincode ?? '';
           const value = this.metric[pincode] ?? 0;
           const office = feature?.properties?.office_name?.trim() ?? '';
-          layer.bindTooltip(
-            office ? `${office} (${pincode}): ${value}` : `PIN ${pincode}: ${value}`,
-            { sticky: true }
-          );
+          const info = this.micromarketMap.get(pincode);
+          let tip = office ? `${office} (${pincode}): ${value}` : `PIN ${pincode}: ${value}`;
+          if (info) tip += ` [${info.zone}]`;
+          layer.bindTooltip(tip, { sticky: true });
           layer.on({
             mouseover: (e) => this.highlight(e),
             mouseout: (e) => this.resetHighlight(e),
@@ -295,9 +275,73 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
       }).addTo(this.map);
 
       this.map.fitBounds(this.geoJsonLayer.getBounds(), { padding: [12, 12] });
+
+      if (this.showMicromarkets) this.renderMicromarketBoundaries(matched);
     } catch {
       this.error = 'Unable to load pincode map data.';
     }
+  }
+
+  toggleMicromarkets(): void {
+    this.showMicromarkets = !this.showMicromarkets;
+    if (this.showMicromarkets) {
+      this.renderMicromarketBoundariesFromView();
+    } else {
+      this.clearMicromarketLayer();
+    }
+  }
+
+  private renderMicromarketBoundariesFromView(): void {
+    if (this.currentPincodeFeatures.length) {
+      this.renderMicromarketBoundaries(this.currentPincodeFeatures as any);
+    }
+  }
+
+  private renderMicromarketBoundaries(pincodes: GeoJSON.Feature<Geometry, PincodeProperties>[]): void {
+    if (!this.map) return;
+    this.clearMicromarketLayer();
+
+    const zonePincodes = new Map<string, GeoJSON.Feature[]>();
+    for (const f of pincodes) {
+      const pincode = f.properties?.pincode ?? '';
+      const info = this.micromarketMap.get(pincode);
+      if (!info) continue;
+      const key = info.zone;
+      if (!zonePincodes.has(key)) zonePincodes.set(key, []);
+      zonePincodes.get(key)!.push(f);
+    }
+
+    if (!zonePincodes.size) return;
+
+    const features: GeoJSON.Feature[] = [];
+    let colorIdx = 0;
+    zonePincodes.forEach((pf, zoneName) => {
+      const color = ZONE_COLORS[colorIdx % ZONE_COLORS.length];
+      colorIdx++;
+      for (const f of pf) {
+        features.push({
+          type: 'Feature',
+          properties: { zone: zoneName, color },
+          geometry: f.geometry,
+        });
+      }
+    });
+
+    this.micromarketLayer = L.geoJSON(
+      { type: 'FeatureCollection', features } as any,
+      {
+        style: (_feature: any) => ({
+          fillColor: 'transparent',
+          fillOpacity: 0,
+          color: '#ff0000',
+          weight: 2,
+        }),
+        onEachFeature: (feature: any, layer: L.Layer) => {
+          const pincode = feature?.properties?.zone ?? '';
+          layer.bindTooltip(pincode, { sticky: true });
+        },
+      }
+    ).addTo(this.map);
   }
 
   back(): void {
