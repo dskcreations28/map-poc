@@ -1,12 +1,27 @@
 <div class="choropleth-card">
   <div class="choropleth-head">
-    <h3>India — States &amp; Union Territories</h3>
+    <h3>India — States & Union Territories</h3>
     <span class="choropleth-sub">Synthetic index values (for demonstration)</span>
   </div>
   <div #mapContainer class="choropleth-map"></div>
   <div class="choropleth-actions">
-    <button type="button" *ngIf="currentState" (click)="back()">&larr; Back to {{ currentDistrict ? 'Districts' : 'India' }}</button>
-    <button type="button" *ngIf="currentDistrict" [class.active]="showMicromarkets" (click)="toggleMicromarkets()">
+    <label class="mode-radio">
+      <input type="radio" name="drill-down" value="district"
+        (change)="drillDownMode = 'district'"
+        [checked]="drillDownMode === 'district'"
+      >
+      <span class="radio-text">District</span>
+    </label>
+    <label class="mode-radio">
+      <input type="radio" name="drill-down" value="city"
+        (change)="drillDownMode = 'city'"
+        [checked]="drillDownMode === 'city'"
+      >
+      <span class="radio-text">City</span>
+    </label>
+    <button type="button" *ngIf="currentState && drillDownMode === 'district'" (click)="back()">&larr; Back to {{ currentDistrict ? 'Districts' : 'India' }}</button>
+    <button type="button" *ngIf="currentState && drillDownMode === 'city'" (click)="back()">&larr; Back to India</button>
+    <button type="button" *ngIf="currentDistrict && drillDownMode === 'district' && !showMicromarkets" [class.active]="showMicromarkets" (click)="toggleMicromarkets()">
       {{ showMicromarkets ? 'Hide' : 'Show' }} Micromarkets
     </button>
     <span class="choropleth-crumb" *ngIf="currentState">

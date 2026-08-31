@@ -39,6 +39,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
   private legend?: L.Control;
   private statesFc?: FeatureCollection<StateProperties>;
   private districtsFc?: FeatureCollection<DistrictProperties>;
+  private citiesFc?: FeatureCollection<DistrictProperties>;
   private pincodesFc?: FeatureCollection<PincodeProperties>;
   private micromarketMap = new Map<string, MicromarketInfo>();
   private currentPincodeFeatures: GeoJSON.Feature[] = [];
@@ -47,6 +48,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
   currentDistrict: string | null = null;
   currentDistrictTitle: string | null = null;
   showMicromarkets = false;
+  drillDownMode: 'district' | 'city' = 'district';
   error: string | null = null;
 
   constructor(private http: HttpClient) {}
@@ -106,6 +108,17 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
       this.http.get<FeatureCollection<DistrictProperties>>('assets/data/india-districts.geojson')
     ).then((fc) => {
       this.districtsFc = fc;
+      fc.features.forEach((f) => this.assignMetric(f.properties?.district ?? ''));
+      return fc;
+    });
+  }
+
+  private loadCities(): Promise<FeatureCollection<DistrictProperties>> {
+    if (this.citiesFc) return Promise.resolve(this.citiesFc);
+    return lastValueFrom(
+      this.http.get<FeatureCollection<DistrictProperties>>('assets/data/india-cities.geojson')
+    ).then((fc) => {
+      this.citiesFc = fc;
       fc.features.forEach((f) => this.assignMetric(f.properties?.district ?? ''));
       return fc;
     });
@@ -228,7 +241,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
           layer.on({
             mouseover: (e) => this.highlight(e),
             mouseout: (e) => this.resetHighlight(e),
-            click: () => this.drillToPincodes(raw, feature?.properties?.state ?? ''),
+            click: () => this.drillToPincodes(raw, feature?.properties?.state ?? '', this.drillDownMode),
           });
         },
       }).addTo(this.map);
@@ -239,7 +252,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  private async drillToPincodes(district: string, state: string): Promise<void> {
+  private async drillToPincodes(district: string, state: string, mode: 'district' | 'city' = 'district'): Promise<void> {
     try {
       const fc = await this.loadPincodes();
       const matched = fc.features.filter(
@@ -249,34 +262,66 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
 
       const subset: FeatureCollection<PincodeProperties> = { type: 'FeatureCollection', features: matched };
 
-      this.clearLayers();
-      this.currentDistrict = district;
-      this.currentDistrictTitle = this.titleCase(district);
-      this.currentPincodeFeatures = matched;
+      if (mode === 'city') {
+        // In city mode: use cities dataset for boundary layer
+        this.clearLayers();
+        this.currentDistrict = district;
+        this.currentDistrictTitle = `City: ${this.titleCase(district)}`;
+        this.currentPincodeFeatures = matched;
 
-      this.geoJsonLayer = L.geoJSON(subset, {
-        style: (feature) => {
-          const pincode = feature?.properties?.pincode ?? '';
-          return { weight: 1, color: '#ffffff', fillColor: this.colorFor(this.metric[pincode] ?? 0), fillOpacity: 0.85 };
-        },
-        onEachFeature: (feature, layer) => {
-          const pincode = feature?.properties?.pincode ?? '';
-          const value = this.metric[pincode] ?? 0;
-          const office = feature?.properties?.office_name?.trim() ?? '';
-          const info = this.micromarketMap.get(pincode);
-          let tip = office ? `${office} (${pincode}): ${value}` : `PIN ${pincode}: ${value}`;
-          if (info) tip += ` [${info.zone}]`;
-          layer.bindTooltip(tip, { sticky: true });
-          layer.on({
-            mouseover: (e) => this.highlight(e),
-            mouseout: (e) => this.resetHighlight(e),
-          });
-        },
-      }).addTo(this.map);
+        // Load and use cities boundary layer
+        const citiesFc = await this.loadCities();
+        const cityMatched = citiesFc.features.filter(
+          (f) => f.properties?.district === district && f.properties?.state === state
+        );
+        const citySubset = { type: 'FeatureCollection', features: cityMatched };
 
-      this.map.fitBounds(this.geoJsonLayer.getBounds(), { padding: [12, 12] });
+        this.geoJsonLayer = L.geoJSON(citySubset as any, {
+          style: (feature) => {
+            const name = feature?.properties?.district ?? '';
+            return { weight: 3, color: '#184f95', fillColor: 'transparent', dashArray: '6, 4' };
+          },
+          onEachFeature: (feature, layer) => {
+            const name = feature?.properties?.district ?? '';
+            layer.bindTooltip(`${name}: City Mode`, { sticky: true });
+          },
+        }).addTo(this.map);
 
-      if (this.showMicromarkets) this.renderMicromarketBoundaries(matched);
+        this.map.fitBounds(this.geoJsonLayer.getBounds(), { padding: [12, 12] });
+
+        // Always render micromarket boundaries in city mode
+        this.renderMicromarketBoundariesFromView();
+      } else {
+        // district mode - original behavior
+        this.clearLayers();
+        this.currentDistrict = district;
+        this.currentDistrictTitle = this.titleCase(district);
+        this.currentPincodeFeatures = matched;
+
+        this.geoJsonLayer = L.geoJSON(subset, {
+          style: (feature) => {
+            const pincode = feature?.properties?.pincode ?? '';
+            return { weight: 1, color: '#ffffff', fillColor: this.colorFor(this.metric[pincode] ?? 0), fillOpacity: 0.85 };
+          },
+          onEachFeature: (feature, layer) => {
+            const pincode = feature?.properties?.pincode ?? '';
+            const value = this.metric[pincode] ?? 0;
+            const office = feature?.properties?.office_name?.trim() ?? '';
+            const info = this.micromarketMap.get(pincode);
+            let tip = office ? `${office} (${pincode}): ${value}` : `PIN ${pincode}: ${value}`;
+            if (info) tip += ` [${info.zone}]`;
+            layer.bindTooltip(tip, { sticky: true });
+            layer.on({
+              mouseover: (e) => this.highlight(e),
+              mouseout: (e) => this.resetHighlight(e),
+            });
+          },
+        }).addTo(this.map);
+
+        this.map.fitBounds(this.geoJsonLayer.getBounds(), { padding: [12, 12] });
+
+        if (this.showMicromarkets) this.renderMicromarketBoundaries(matched);
+      }
     } catch {
       this.error = 'Unable to load pincode map data.';
     }
@@ -335,10 +380,11 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
           fillOpacity: 0,
           color: '#ff0000',
           weight: 2,
+          dashArray: '6, 4',
         }),
         onEachFeature: (feature: any, layer: L.Layer) => {
-          const pincode = feature?.properties?.zone ?? '';
-          layer.bindTooltip(pincode, { sticky: true });
+          const zone = feature?.properties?.zone ?? '';
+          layer.bindTooltip(zone, { sticky: true });
         },
       }
     ).addTo(this.map);
@@ -349,6 +395,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
       this.drillToDistricts(this.currentState ?? '');
     } else {
       this.renderStates();
+      this.drillDownMode = 'district';
     }
   }
 
