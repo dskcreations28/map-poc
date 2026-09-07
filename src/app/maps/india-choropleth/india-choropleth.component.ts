@@ -48,7 +48,6 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
   currentDistrict: string | null = null;
   currentDistrictTitle: string | null = null;
   showMicromarkets = false;
-  drillDownMode: 'district' | 'city' = 'district';
   error: string | null = null;
 
   constructor(private http: HttpClient) {}
@@ -241,7 +240,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
           layer.on({
             mouseover: (e) => this.highlight(e),
             mouseout: (e) => this.resetHighlight(e),
-            click: () => this.drillToPincodes(raw, feature?.properties?.state ?? '', this.drillDownMode),
+            click: () => this.drillToPincodes(raw, feature?.properties?.state ?? ''),
           });
         },
       }).addTo(this.map);
@@ -252,7 +251,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  private async drillToPincodes(district: string, state: string, mode: 'district' | 'city' = 'district'): Promise<void> {
+  private async drillToPincodes(district: string, state: string): Promise<void> {
     try {
       const fc = await this.loadPincodes();
       const matched = fc.features.filter(
@@ -262,48 +261,18 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
 
       const subset: FeatureCollection<PincodeProperties> = { type: 'FeatureCollection', features: matched };
 
-      if (mode === 'city') {
-        // In city mode: use cities dataset for boundary layer
-        this.clearLayers();
-        this.currentDistrict = district;
-        this.currentDistrictTitle = `City: ${this.titleCase(district)}`;
-        this.currentPincodeFeatures = matched;
+      // district mode - original behavior
+      this.clearLayers();
+      this.currentDistrict = district;
+      this.currentDistrictTitle = this.titleCase(district);
+      this.currentPincodeFeatures = matched;
 
-        // Load and use cities boundary layer
-        const citiesFc = await this.loadCities();
-        const cityMatched = citiesFc.features.filter(
-          (f) => f.properties?.district === district && f.properties?.state === state
-        );
-        const citySubset = { type: 'FeatureCollection', features: cityMatched };
-
-        this.geoJsonLayer = L.geoJSON(citySubset as any, {
-          style: (feature) => {
-            const name = feature?.properties?.district ?? '';
-            return { weight: 3, color: '#184f95', fillColor: 'transparent', dashArray: '6, 4' };
-          },
-          onEachFeature: (feature, layer) => {
-            const name = feature?.properties?.district ?? '';
-            layer.bindTooltip(`${name}: City Mode`, { sticky: true });
-          },
-        }).addTo(this.map);
-
-        this.map.fitBounds(this.geoJsonLayer.getBounds(), { padding: [12, 12] });
-
-        // Always render micromarket boundaries in city mode
-        this.renderMicromarketBoundariesFromView();
-      } else {
-        // district mode - original behavior
-        this.clearLayers();
-        this.currentDistrict = district;
-        this.currentDistrictTitle = this.titleCase(district);
-        this.currentPincodeFeatures = matched;
-
-        this.geoJsonLayer = L.geoJSON(subset, {
-          style: (feature) => {
-            const pincode = feature?.properties?.pincode ?? '';
-            return { weight: 1, color: '#ffffff', fillColor: this.colorFor(this.metric[pincode] ?? 0), fillOpacity: 0.85 };
-          },
-          onEachFeature: (feature, layer) => {
+      this.geoJsonLayer = L.geoJSON(subset, {
+        style: (feature) => {
+          const pincode = feature?.properties?.pincode ?? '';
+          return { weight: 1, color: '#ffffff', fillColor: this.colorFor(this.metric[pincode] ?? 0), fillOpacity: 0.85 };
+        },
+        onEachFeature: (feature, layer) => {
             const pincode = feature?.properties?.pincode ?? '';
             const value = this.metric[pincode] ?? 0;
             const office = feature?.properties?.office_name?.trim() ?? '';
@@ -321,7 +290,6 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
         this.map.fitBounds(this.geoJsonLayer.getBounds(), { padding: [12, 12] });
 
         if (this.showMicromarkets) this.renderMicromarketBoundaries(matched);
-      }
     } catch {
       this.error = 'Unable to load pincode map data.';
     }
@@ -395,7 +363,6 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy {
       this.drillToDistricts(this.currentState ?? '');
     } else {
       this.renderStates();
-      this.drillDownMode = 'district';
     }
   }
 
