@@ -1,0 +1,32 @@
+<div class="switcher-container">
+  <span class="switcher-label">View by:</span>
+  <div class="radio-group">
+    <label class="radio-item">
+      <input
+        type="radio"
+        name="data-type"
+        value="district"
+        [checked]="isDistrict"
+        (change)="selectDistrict()"
+      />
+      <span class="radio-custom">
+        <span class="radio-indicator"></span>
+        <span class="radio-label">District</span>
+      </span>
+    </label>
+
+    <label class="radio-item">
+      <input
+        type="radio"
+        name="data-type"
+        value="city"
+        [checked]="!isDistrict"
+        (change)="selectCity()"
+      />
+      <span class="radio-custom">
+        <span class="radio-indicator"></span>
+        <span class="radio-label">City</span>
+      </span>
+    </label>
+  </div>
+</div>

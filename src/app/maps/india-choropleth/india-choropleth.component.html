@@ -3,7 +3,15 @@
     <h3>India — States &amp; Union Territories</h3>
     <span class="choropleth-sub">Synthetic index values (for demonstration)</span>
   </div>
-  <div #mapContainer class="choropleth-map"></div>
+
+  <app-switcher *ngIf="!currentState" (viewChange)="viewMode = $event"></app-switcher>
+
+  <!-- District Map Container -->
+  <div id="district-map-container" class="map-container" [class.active]="viewMode === 'district'"></div>
+
+  <!-- City Map Container -->
+  <div id="city-map-container" class="map-container" [class.active]="viewMode === 'city'"></div>
+
   <div class="choropleth-actions">
     <button type="button" *ngIf="currentState" (click)="back()">&larr; Back to {{ currentDistrict ? 'Districts' : 'India' }}</button>
     <button type="button" *ngIf="currentDistrict" [class.active]="showMicromarkets" (click)="toggleMicromarkets()">

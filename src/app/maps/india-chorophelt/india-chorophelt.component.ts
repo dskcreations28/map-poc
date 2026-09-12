@@ -24,13 +24,13 @@ interface PincodeProperties { pincode: string; district: string; state: string; 
 interface MicromarketInfo { location: string; city: string; zone: string; }
 
 @Component({
-  selector: 'app-india-choropleth',
+  selector: 'app-india-chorophelt',
   standalone: true,
   imports: [CommonModule, SwitcherComponent],
-  templateUrl: './india-choropleth.component.html',
-  styleUrl: './india-choropleth.component.scss',
+  templateUrl: './india-chorophelt.component.html',
+  styleUrl: './india-chorophelt.component.scss',
 })
-export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy, OnChanges {
+export class IndiaChoropheltComponent implements AfterViewInit, OnDestroy, OnChanges {
   @Input() viewMode: 'district' | 'city' = 'district';
 
   @ViewChild('districtMapContainer') districtMapContainer!: ElementRef;
@@ -45,7 +45,7 @@ export class IndiaChoroplethComponent implements AfterViewInit, OnDestroy, OnCha
   private districtsFc?: FeatureCollection<DistrictProperties>;
   private pincodesFc?: FeatureCollection<PincodeProperties>;
   private micromarketMap = new Map<string, MicromarketInfo>();
-  private currentPincodeFeatures: GeoJSON.Feature[] = [];
+  private currentPincodeFeatures: GeoJSON.Feature<Geometry, PincodeProperties>[] = [];
 
   currentState: string | null = null;
   currentDistrict: string | null = null;

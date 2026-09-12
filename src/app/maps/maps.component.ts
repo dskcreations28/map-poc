@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IndiaChoroplethComponent } from './india-choropleth/india-choropleth.component';
+import { SwitcherComponent } from '../shared/switcher/switcher.component';
 
 @Component({
   selector: 'app-maps',
